@@ -138,7 +138,7 @@ struct AWSLambdaPackager: CommandPlugin {
             } else {
                 try self.execute(
                     executable: dockerToolPath,
-                    arguments: ["run", "--rm", "-v", "\(packageDirectory.string):/workspace", "-w", "/workspace", baseImage, "bash", "-cl", buildCommand],
+                    arguments: ["run", "--rm", "-v", "\(packageDirectory.string):/workspace", "-v", "/Users/stewthom/.ssh:/root/.ssh", "-w", "/workspace", baseImage, "bash", "-cl", buildCommand],
                     logLevel: verboseLogging ? .debug : .output
                 )
             }
@@ -227,14 +227,26 @@ struct AWSLambdaPackager: CommandPlugin {
 
             // add resources
             let artifactDirectory = artifactPath.removingLastComponent()
-            let resourcesDirectoryName = "\(packageName)_\(product.name).resources"
-            let resourcesDirectory = artifactDirectory.appending(resourcesDirectoryName)
-            let relocatedResourcesDirectory = workingDirectory.appending(resourcesDirectoryName)
-            if FileManager.default.fileExists(atPath: resourcesDirectory.string) {
-                try FileManager.default.copyItem(atPath: resourcesDirectory.string, toPath: relocatedResourcesDirectory.string)
-                arguments.append(resourcesDirectoryName)
+            
+            for fileInArtifactDirectory in try FileManager.default.contentsOfDirectory(atPath: artifactDirectory.string) {
+                guard let artifactURL = URL(string: "\(artifactDirectory)/\(fileInArtifactDirectory)") else {
+                    continue
+                }
+                
+                guard artifactURL.pathExtension == "resources" else {
+                    continue  // Not resources, so don't copy
+                }
+                let resourcesDirectoryName = artifactURL.lastPathComponent
+                let relocatedResourcesDirectory = workingDirectory.appending(subpath: resourcesDirectoryName)
+                if FileManager.default.fileExists(atPath: artifactURL.path()) {
+                    try FileManager.default.copyItem(
+                        atPath: artifactURL.path(),
+                        toPath: relocatedResourcesDirectory.string
+                    )
+                    arguments.append(resourcesDirectoryName)
+                }
             }
-
+            
             // run the zip tool
             try self.execute(
                 executable: zipToolPath,
